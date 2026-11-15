@@ -1,0 +1,43 @@
+{
+  "template": "https://github.com/backofficedev/cookiecutter_chartbook",
+  "commit": "9eebbda0b314cc9d95065cfd70904898a5f5731c",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "project_name": "p24_pettenuzzo_sabbatucci_timmermann_2020",
+      "project_slug": "p24_pettenuzzo_sabbatucci_timmermann_2020",
+      "project_description": "FINM Project 24: Replication and extension of Pettenuzzo, Sabbatucci, and Timmermann (2020).",
+      "author_name": "Gaoyuan Li",
+      "author_email": "ligaoyuan040228@gmail.com",
+      "python_version": "3.12",
+      "environment_manager": "conda",
+      "include_latex_reports": true,
+      "include_jupyter_notebooks": true,
+      "include_r_scripts": false,
+      "include_stata_scripts": false,
+      "include_chartbook": true,
+      "include_github_actions": true,
+      "include_fred": true,
+      "include_fed_yield_curve": true,
+      "include_ofr_api": false,
+      "include_bloomberg": false,
+      "include_crsp_stock": true,
+      "include_crsp_compustat": true,
+      "_copy_without_render": [
+        "*.bst",
+        "*.sty",
+        "*.eps",
+        "*.ipe",
+        "*.png",
+        "*.pdf",
+        "*.tex",
+        "*.bib",
+        ".github/workflows/*.yml",
+        ".claude/skills/*/*.md"
+      ],
+      "_template": "https://github.com/backofficedev/cookiecutter_chartbook",
+      "_commit": "9eebbda0b314cc9d95065cfd70904898a5f5731c"
+    }
+  },
+  "directory": null
+}
