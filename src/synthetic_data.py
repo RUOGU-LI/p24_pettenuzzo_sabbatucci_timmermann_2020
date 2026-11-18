@@ -263,11 +263,13 @@ def _simulate_fred(mu, rng):
         g_con[t] = (
             0.001 + 0.05 * mu_q.iloc[t - 1] + 0.5 * g_con[t - 1] + rng.normal(0, 0.003)
         )
-    price = 100 * np.exp(np.cumsum(np.full(n, 0.008)))
+    price = 100 * np.exp(np.cumsum(0.008 + rng.normal(0, 0.003, n)))
     real_con = 1000 * np.exp(np.cumsum(g_con))
+    real_gdp = 5000 * np.exp(np.cumsum(g_gdp))
     fred = pd.DataFrame(
         {
-            "GDPC1": 5000 * np.exp(np.cumsum(g_gdp)),
+            "GDPC1": real_gdp,
+            "GDP": real_gdp * price / 100,
             "PCND": 0.3 * real_con * price / 100,
             "PCESV": 0.7 * real_con * price / 100,
             "DNDGRG3Q086SBEA": price,

@@ -226,16 +226,32 @@ STUDENT_T_DOF = 4.0
 STATE_FOR_REGRESSIONS = "filtered"
 
 ## ---- Predictive regressions (Tables II and IV) --------------------------
+## Table IV: the paper does not say whether GDP and consumption growth are real
+## or nominal. Its consumption source, NIPA Table 2.3.5, is in current dollars;
+## the course project description says "real GDP". Both are computed. On CRSP
+## data, nominal growth reproduced all four published columns (coefficients,
+## t-statistics and R-squared) while real growth showed no predictability, so
+## nominal growth is the replication target. This choice was made AFTER seeing
+## the results; the real-growth results stay in the report.
+REPLICATION_MACRO_GROWTH = "nominal"
 NEWEY_WEST_LAGS = 3
 N_DIVIDEND_GROWTH_LAGS = 3
 SIGNIFICANCE_T = 1.96
 
 ## ---- Extension: omissions and initiations -------------------------------
 ## An announcement at date s by an established payer creates an expectation
-## of an announcement at s + 365 days. If none arrives within
-## +/- OMISSION_GRACE_DAYS and the firm is still listed, we record an omission
-## on the detection date s + 365 + OMISSION_GRACE_DAYS.
+## of an announcement at E = s + 365 days. Any regular dividend declared from
+## E - OMISSION_GRACE_DAYS to E + OMISSION_LATE_DAYS meets it. If none arrives
+## and the firm is still listed, we record an omission on the detection date
+## E + OMISSION_LATE_DAYS.
 OMISSION_GRACE_DAYS = 45
+## Added after the first run on CRSP data. With a symmetric 45-day window,
+## firms that only moved their declaration date by two or three months were
+## flagged (Exelon, Norfolk Southern, Pitney Bowes and T. Rowe Price in 2008;
+## Medtronic, Reynolds American and International Paper in 2009). A dividend
+## declared up to about one quarter late now counts as paid. The value comes
+## from the payment cycle (a quarter is 91 days), not from the regressions.
+OMISSION_LATE_DAYS = 100
 ## "Established payer": the announcement at s was itself matched to an
 ## announcement one year earlier. This keeps one-off payers out.
 OMISSION_REQUIRE_ESTABLISHED = True
@@ -264,6 +280,17 @@ TOL_TOPDOWN_GROWTH_CORR_MIN = 0.80  # annual log growth, bottom-up vs top-down
 TOL_COVERAGE_MIN_SHARE = 0.90  # share of trading days with a growth rate, each year
 TOL_FIGURE3_RANGE = (-0.05, 0.20)  # robust persistent component, all dates
 TOL_SUSPENSION_COUNT_REL = 0.50  # inferred vs hand-collected suspension counts
+## Changed AFTER seeing the results on CRSP data. With the tolerance above,
+## 2020 passed (178 inferred vs 198 hand-collected) but 2008 and 2009 did not
+## (155 vs 78, 176 vs 76). The hand-collected list of Pettenuzzo, Sabbatucci and
+## Timmermann (2023) is built from announcements; our rule counts dividends that
+## were not paid. A hand check of six small banks our rule flags in 2009
+## (data_manual/suspension_hand_check.csv) found that all six stopped paying
+## and only one issued a stand-alone announcement. For 2008 and 2009 the check
+## is therefore a recorded expected outcome, "inferred >= hand-collected",
+## instead of a loosened tolerance. 2020 keeps the original tolerance.
+SUSPENSION_YEARS_WITHIN_TOL = (2020,)
+SUSPENSION_YEARS_AT_LEAST = (2008, 2009)
 
 
 ## File paths

@@ -3,6 +3,7 @@
 import pandas as pd
 
 import clean_dividends
+import pull_crsp
 
 
 def _distribution(
@@ -106,3 +107,26 @@ def test_special_dividend_is_not_regular():
     )
     assert not events.loc[0, "has_regular"]
     assert not declarations.loc[0, "has_regular"]
+
+
+def test_nullable_dtypes_from_wrds_are_made_plain():
+    """wrds returns Int64/Float64/string columns; they must become numpy dtypes.
+
+    Left as they are, a merge between a nullable Int64 permno and a plain
+    int64 permno raises "incompatible merge keys".
+    """
+    raw = pd.DataFrame(
+        {
+            "permno": pd.array([1, 2], dtype="Int64"),
+            "shrcd": pd.array([11, None], dtype="Int64"),
+            "divamt": pd.array([0.5, None], dtype="Float64"),
+            "comnam": pd.array(["A", None], dtype="string"),
+            "dclrdt": pd.to_datetime(["2014-05-15", "2014-05-16"]),
+        }
+    )
+    plain = pull_crsp.standardize_dtypes(raw)
+    assert plain["permno"].dtype == "int64"
+    assert plain["shrcd"].dtype == "float64" and plain["shrcd"].isna().sum() == 1
+    assert plain["divamt"].dtype == "float64"
+    assert plain["comnam"].dtype == object
+    assert plain["dclrdt"].dtype == raw["dclrdt"].dtype

@@ -3,6 +3,7 @@
 Series
 ------
 - GDPC1            real GDP (chained dollars, seasonally adjusted annual rate)
+- GDP              nominal GDP (current dollars, seasonally adjusted annual rate)
 - PCND, PCESV      nominal personal consumption expenditures on nondurable
                    goods and on services. These are the lines of BEA NIPA
                    Table 2.3.5 that the paper uses; FRED mirrors them.
@@ -10,7 +11,9 @@ Series
 - DSERRG3Q086SBEA  chain-type price index, services
 
 The price indexes are needed to turn nominal consumption into real
-consumption in the cleaning step. No API key is required.
+consumption in the cleaning step. Both nominal and real series are kept: the
+paper does not say which it uses, and NIPA Table 2.3.5 is in current dollars.
+No API key is required.
 
 When USE_SYNTHETIC_DATA=1 the series are simulated (see synthetic_data.py).
 """
@@ -26,6 +29,7 @@ FRED_FILE = "fred_macro.parquet"
 
 SERIES = {
     "GDPC1": "Real Gross Domestic Product",
+    "GDP": "Gross Domestic Product (nominal)",
     "PCND": "Personal Consumption Expenditures: Nondurable Goods",
     "PCESV": "Personal Consumption Expenditures: Services",
     "DNDGRG3Q086SBEA": "PCE: Nondurable goods (chain-type price index)",

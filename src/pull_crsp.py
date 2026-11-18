@@ -5,7 +5,8 @@ units so that anyone who knows CRSP can read them:
 
 - crsp_dsedist.parquet   ordinary dividend distributions (crsp.dsedist) with
                          the price and shares outstanding on the last trading
-                         day on or before the declaration date (crsp.dsf)
+                         day on or before the declaration date (crsp.dsf);
+                         one row per distribution
 - crsp_dsenames.parquet  share code, exchange code and name history
 - crsp_dsedelist.parquet delisting dates and codes
 - crsp_dsi.parquet       daily value-weighted index returns with and without
@@ -45,35 +46,106 @@ RAW_FILES = {
 }
 
 
+def standardize_dtypes(df):
+    """Convert pandas nullable columns (Int64, Float64, string) to plain numpy dtypes.
+
+    The wrds package returns nullable dtypes. Mixing them with ordinary numpy
+    columns breaks merges ("incompatible merge keys int64 and Int64") and
+    turns missing values into masked entries instead of NaN. Every raw table
+    goes through this function when it is pulled and again when it is loaded.
+
+    Integer columns without missing values become int64; integer columns with
+    missing values and all float columns become float64; strings and booleans
+    become object. Dates are left alone.
+    """
+    out = df.copy()
+    for col in out.columns:
+        dtype = out[col].dtype
+        if not pd.api.types.is_extension_array_dtype(dtype):
+            continue
+        if pd.api.types.is_datetime64_any_dtype(dtype):
+            continue
+        if pd.api.types.is_integer_dtype(dtype) and not out[col].isna().any():
+            out[col] = out[col].astype("int64")
+        elif pd.api.types.is_numeric_dtype(dtype) and not pd.api.types.is_bool_dtype(
+            dtype
+        ):
+            out[col] = out[col].astype("float64")
+        else:
+            out[col] = out[col].astype(object).where(out[col].notna(), None)
+    return out
+
+
+def _log(message):
+    """Print progress right away (doit buffers output otherwise)."""
+    print(message, flush=True)
+
+
 def _connect():
     """Open a WRDS connection using WRDS_USERNAME from the environment."""
     import wrds
 
+    _log("Connecting to WRDS (approve the Duo request on your phone if asked) ...")
     return wrds.Connection(wrds_username=config("WRDS_USERNAME"))
+
+
+def distributions_query(start_date=PULL_START_DATE, end_date=END_DATE):
+    """SQL for ordinary dividend distributions (one row per distribution)."""
+    return f"""
+        SELECT permno, distcd, divamt, dclrdt, exdt, rcrddt, paydt
+        FROM crsp.dsedist
+        WHERE distcd BETWEEN {int(ORDINARY_DISTCD_MIN)} AND {int(ORDINARY_DISTCD_MAX)}
+          AND dclrdt BETWEEN '{start_date:%Y-%m-%d}' AND '{end_date:%Y-%m-%d}'
+    """
+
+
+def announcement_prices_query(start_date=PULL_START_DATE, end_date=END_DATE):
+    """SQL for the price and shares on the last trading day up to each declaration.
+
+    Returns one row per (permno, dclrdt). The join to crsp.dsf is written as
+    an equality on (permno, date), tried for each of the PRICE_LOOKBACK_DAYS
+    calendar days before the declaration. An equality join lets the database
+    use its (permno, date) index or a hash join. Writing the same thing as
+    `date BETWEEN dclrdt - 7 AND dclrdt` is a range join, which made the
+    database compare every dividend of a firm with every trading day of that
+    firm and did not finish in half an hour.
+    """
+    return f"""
+        SELECT DISTINCT ON (d.permno, d.dclrdt)
+               d.permno, d.dclrdt, s.date AS price_date, s.prc, s.shrout
+        FROM (
+            SELECT DISTINCT permno, dclrdt
+            FROM crsp.dsedist
+            WHERE distcd BETWEEN {int(ORDINARY_DISTCD_MIN)} AND {int(ORDINARY_DISTCD_MAX)}
+              AND dclrdt BETWEEN '{start_date:%Y-%m-%d}' AND '{end_date:%Y-%m-%d}'
+        ) AS d
+        CROSS JOIN generate_series(0, {int(PRICE_LOOKBACK_DAYS)}) AS g(days_back)
+        INNER JOIN crsp.dsf AS s
+          ON s.permno = d.permno
+         AND s.date = d.dclrdt - CAST(g.days_back AS INTEGER)
+        ORDER BY d.permno, d.dclrdt, s.date DESC
+    """
 
 
 def pull_dsedist(db, start_date=PULL_START_DATE, end_date=END_DATE):
     """Pull ordinary dividend distributions with announcement-day share data.
 
-    Each distribution is joined to every crsp.dsf row of the same security in
-    the PRICE_LOOKBACK_DAYS calendar days ending on the declaration date. The
-    cleaning step keeps the latest of those rows. Pulling the join instead of
-    the whole daily stock file keeps the download to a few million rows.
+    Two queries: the distributions themselves, and the price and shares
+    outstanding on the last trading day on or before each declaration date.
+    They are merged here. A distribution with no trading day in the look-back
+    window keeps missing price and shares, and is dropped later by the
+    cleaning step (but still counts as a declared dividend).
     """
-    query = f"""
-        SELECT d.permno, d.distcd, d.divamt, d.dclrdt, d.exdt, d.rcrddt,
-               d.paydt, s.date AS price_date, s.prc, s.shrout
-        FROM crsp.dsedist AS d
-        LEFT JOIN crsp.dsf AS s
-          ON s.permno = d.permno
-         AND s.date BETWEEN d.dclrdt - {int(PRICE_LOOKBACK_DAYS)} AND d.dclrdt
-        WHERE d.distcd BETWEEN {int(ORDINARY_DISTCD_MIN)} AND {int(ORDINARY_DISTCD_MAX)}
-          AND d.dclrdt BETWEEN '{start_date:%Y-%m-%d}' AND '{end_date:%Y-%m-%d}'
-    """
-    df = db.raw_sql(
-        query, date_cols=["dclrdt", "exdt", "rcrddt", "paydt", "price_date"]
+    date_cols = ["dclrdt", "exdt", "rcrddt", "paydt"]
+    _log("  distributions (crsp.dsedist) ...")
+    dist = db.raw_sql(distributions_query(start_date, end_date), date_cols=date_cols)
+    _log(f"  {len(dist):,} distributions. Prices at announcement (crsp.dsf) ...")
+    prices = db.raw_sql(
+        announcement_prices_query(start_date, end_date),
+        date_cols=["dclrdt", "price_date"],
     )
-    return df
+    _log(f"  {len(prices):,} announcement days with a price.")
+    return dist.merge(prices, on=["permno", "dclrdt"], how="left")
 
 
 def pull_dsenames(db):
@@ -103,22 +175,22 @@ def pull_dsi(db, start_date=PULL_START_DATE, end_date=END_DATE):
 
 def load_dsedist(data_dir=DATA_DIR):
     """Load the raw distribution events."""
-    return pd.read_parquet(Path(data_dir) / RAW_FILES["dsedist"])
+    return standardize_dtypes(pd.read_parquet(Path(data_dir) / RAW_FILES["dsedist"]))
 
 
 def load_dsenames(data_dir=DATA_DIR):
     """Load the raw name history."""
-    return pd.read_parquet(Path(data_dir) / RAW_FILES["dsenames"])
+    return standardize_dtypes(pd.read_parquet(Path(data_dir) / RAW_FILES["dsenames"]))
 
 
 def load_dsedelist(data_dir=DATA_DIR):
     """Load the raw delisting events."""
-    return pd.read_parquet(Path(data_dir) / RAW_FILES["dsedelist"])
+    return standardize_dtypes(pd.read_parquet(Path(data_dir) / RAW_FILES["dsedelist"]))
 
 
 def load_dsi(data_dir=DATA_DIR):
     """Load the raw daily index file."""
-    return pd.read_parquet(Path(data_dir) / RAW_FILES["dsi"])
+    return standardize_dtypes(pd.read_parquet(Path(data_dir) / RAW_FILES["dsi"]))
 
 
 def data_source(data_dir=DATA_DIR):
@@ -132,29 +204,37 @@ def data_source(data_dir=DATA_DIR):
 
 
 def pull_all():
-    """Return the four raw tables, from WRDS or from the simulator."""
+    """Yield (name, table) for the four raw tables, from WRDS or the simulator.
+
+    Tables are yielded one at a time so each can be saved as soon as it has
+    been downloaded.
+    """
     if use_synthetic_data():
         import synthetic_data
 
         tables = synthetic_data.simulate_crsp()
-        return {key: tables[key] for key in RAW_FILES}
+        for key in RAW_FILES:
+            yield key, tables[key]
+        return
     db = _connect()
     try:
-        tables = {
-            "dsedist": pull_dsedist(db),
-            "dsenames": pull_dsenames(db),
-            "dsedelist": pull_dsedelist(db),
-            "dsi": pull_dsi(db),
+        pulls = {
+            "dsenames": pull_dsenames,
+            "dsedelist": pull_dsedelist,
+            "dsi": pull_dsi,
+            "dsedist": pull_dsedist,
         }
+        for key, pull in pulls.items():
+            _log(f"Pulling {key} ...")
+            yield key, standardize_dtypes(pull(db))
     finally:
         db.close()
-    return tables
 
 
 if __name__ == "__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    for key, table in pull_all().items():
+    for key, table in pull_all():
         table.to_parquet(DATA_DIR / RAW_FILES[key], index=False)
-        print(f"Wrote {RAW_FILES[key]}: {len(table):,} rows")
+        _log(f"Wrote {RAW_FILES[key]}: {len(table):,} rows")
     source = "synthetic" if use_synthetic_data() else "wrds"
     (DATA_DIR / SOURCE_MARKER_FILE).write_text(source + "\n")

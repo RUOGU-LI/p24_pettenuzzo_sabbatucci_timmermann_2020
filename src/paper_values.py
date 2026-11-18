@@ -21,6 +21,10 @@ N_DECLARED_DIVIDENDS_POST_1964 = 402_115
 
 ## ---------------------------------------------------------------------
 ## PST2020, Figure 1 (2014Q2) checkpoints
+## The paper's counts and dollars refer to the firms that enter the growth
+## rate, i.e. those with an announcement one year earlier. On CRSP data that
+## gives exactly 68 firms on April 24, 2014 and $3.67m on June 30, 2014;
+## counting every announcer gives 78 firms and $8.97m.
 ## ---------------------------------------------------------------------
 FIGURE1 = {
     # Largest dollar amount announced on one day in 2014Q2 (footnote 14).
