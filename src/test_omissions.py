@@ -116,6 +116,32 @@ def test_dividend_more_than_a_quarter_late_is_an_omission():
     assert omissions["expected_date"].tolist() == [pd.Timestamp("2008-05-14")]
 
 
+def test_single_skipped_quarter_and_cut_to_semi_annual_are_not_omissions():
+    """Known limit: the measure catches suspensions, not every missed payment.
+
+    The late window (100 days) is longer than a quarter and one declaration
+    can fulfil two expectations, so the next declaration covers the gap. With
+    a symmetric 45-day window the same panels give one and two omissions.
+    """
+    skipped = [d for d in _years(2006, 2007, 2008, 2009) if d != "2008-05-15"]
+    semi_annual = _years(2006, 2007) + [
+        "2008-02-15",
+        "2008-08-15",
+        "2009-02-15",
+        "2009-08-15",
+    ]
+    for dates, n_symmetric in [(skipped, 1), (semi_annual, 2)]:
+        matched, declarations = _panel({1: dates})
+        names = pd.DataFrame([_names()])
+        data_end = pd.Timestamp("2009-08-31")
+        exp = co.build_expectations(matched, declarations, names, data_end)
+        assert len(co.infer_omissions(exp)) == 0
+        exp = co.build_expectations(
+            matched, declarations, names, data_end, late_days=45
+        )
+        assert len(co.infer_omissions(exp)) == n_symmetric
+
+
 def test_delisted_firm_is_not_an_omission():
     """A firm acquired in early 2009 stops announcing, but it did not omit."""
     matched, declarations = _panel({1: _years(2007, 2008)})

@@ -46,6 +46,14 @@ Known limits (see the report): the omission is only detected when the window
 closes; a firm that moves its declaration date by more than the window
 is flagged by mistake; delistings and share-class changes are handled through
 the CRSP name history only.
+
+The measure catches suspensions, not every missed payment. The late side of
+the window (OMISSION_LATE_DAYS = 100) is longer than a quarter (91 days), and
+one declaration may fulfil more than one expectation. A quarterly payer that
+skips a single quarter therefore has that expectation met by its next
+quarterly declaration, and a firm that cuts from quarterly to semi-annual
+payments has every expectation met by one of the remaining declarations.
+Neither case produces an omission.
 """
 
 from pathlib import Path
@@ -112,8 +120,9 @@ def build_expectations(
 
     Returns one row per expectation whose window closed on or before
     data_end and whose firm was still in the universe at that point, with
-    the columns permno, source_dclrdt, expected_date, detection_date,
-    dollars_prior, fulfilled.
+    the columns permno, source_dclrdt, expected_date, dollars_prior, comnam,
+    detection_date, fulfilled_by (date of the declaration that met the
+    expectation, missing if none did) and fulfilled.
     """
     regular = matched[matched["has_regular"]]
     source = regular[regular["matched"]] if require_established else regular
