@@ -23,14 +23,18 @@ Two versions
           2. measurement errors are Student-t with STUDENT_T_DOF degrees of
              freedom. In the filter this down-weights an observation by
              w_t = (nu + 1) / (nu + v_t^2 / F_t), where v_t is the forecast
-             error and F_t its variance, so a huge surprise moves the state
+             error and F_t the working forecast scale squared, so a huge surprise moves the state
              very little. This is the bottom panel of Figure 3.
 
 Filtered versus smoothed
 ------------------------
-The filtered state uses data up to day t. The smoothed state uses the whole
-sample. Figures show the smoothed state; predictive regressions use the
-filtered state so that no future information enters a forecast.
+Conditional on fixed parameter estimates, the filtered state uses
+observations only up to day t, whereas the smoothed state uses the whole
+estimation sample. Figures show the smoothed state; predictive regressions
+use the filtered state to avoid look-ahead from state smoothing. However,
+parameters estimated on the full update sample contain future information
+relative to earlier dates. Only the post-2016 paper-sample extension uses
+parameters frozen before the evaluation period.
 
 Estimation samples
 ------------------
@@ -40,6 +44,7 @@ is also run forward to END_DATE; because the filter is causal, those values
 after 2016 are a true out-of-sample extension with frozen parameters.
 """
 
+import warnings
 from math import lgamma, log, pi
 from pathlib import Path
 
@@ -74,6 +79,12 @@ def kalman_filter(y, mu_bar, phi, sigma_mu, sigma_d, nu=None):
     y : array of float, NaN where no observation is available.
     nu : None for Gaussian measurement errors, or the Student-t degrees of
         freedom for the robust filter.
+    sigma_d : measurement-error standard deviation in the Gaussian model.
+        In the robust model it is a Student-t scale parameter, not a
+        standard deviation. The approximate predictive likelihood treats
+        p + r as the squared Student-t scale. For nu > 2, a Student-t
+        standard deviation equals its scale times sqrt(nu / (nu - 2)),
+        which is sqrt(2) times the scale when nu = 4.
 
     Returns a dict with the log-likelihood and the predicted and filtered
     state means and variances (all in levels of mu, not deviations).
@@ -94,7 +105,7 @@ def kalman_filter(y, mu_bar, phi, sigma_mu, sigma_d, nu=None):
         a_pred[t] = a
         p_pred[t] = p
         yt = y[t]
-        if yt == yt:  # not NaN
+        if not np.isnan(yt):
             v = yt - mu_bar - a
             f = p + r
             if nu is None:
@@ -148,7 +159,7 @@ def _unpack(theta):
 def fit_state_space(y, nu=None):
     """Estimate (mu_bar, phi, sigma_mu, sigma_d) by maximum likelihood.
 
-    Returns a dict of parameter estimates plus loglik and n_obs.
+    Returns parameter estimates, loglik, n_obs and a converged flag.
     """
     y = np.asarray(y, dtype=float)
     obs = y[~np.isnan(y)]
@@ -171,6 +182,23 @@ def fit_state_space(y, nu=None):
     estimates = dict(zip(PARAM_NAMES, (float(x) for x in _unpack(result.x))))
     estimates["loglik"] = float(-result.fun)
     estimates["n_obs"] = len(obs)
+    estimates["converged"] = bool(result.success)
+
+    if not result.success:
+        warnings.warn(
+            f"State-space optimization did not converge: {result.message}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    phi_upper = 1.0 - np.exp(bounds[1][0])
+    if np.isclose(estimates["phi"], phi_upper, rtol=0.0, atol=1e-8):
+        warnings.warn(
+            f"Estimated phi reached its upper bound ({phi_upper:.5f}).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     return estimates
 
 
@@ -199,7 +227,8 @@ def estimate_persistent_component(
         mu_smoothed. For sample="paper", mu_filtered runs to END_DATE with
         parameters frozen at PAPER_END_DATE and mu_smoothed stops at
         PAPER_END_DATE.
-    params : DataFrame with one row per (model, sample, parameter).
+    params : DataFrame with one row per (model, sample, parameter)
+        and a boolean converged column for the corresponding fit.
     """
     daily = daily[(daily["date"] >= START_DATE) & (daily["date"] <= END_DATE)]
     daily = daily.sort_values("date").reset_index(drop=True)
@@ -212,6 +241,7 @@ def estimate_persistent_component(
             if in_sample.sum() == 0:
                 continue
             est = fit_state_space(y[in_sample], nu=nu)
+            converged = est.pop("converged")
             theta = [est[name] for name in PARAM_NAMES]
             filtered = kalman_filter(y, *theta, nu=nu)["filt_mean"]
             smoothed = np.full(len(y), np.nan)
@@ -235,6 +265,7 @@ def estimate_persistent_component(
                         "sample": sample,
                         "parameter": name,
                         "value": value,
+                        "converged": converged,
                     }
                 )
     return pd.concat(states, ignore_index=True), pd.DataFrame(params)
