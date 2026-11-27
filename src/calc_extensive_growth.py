@@ -75,6 +75,10 @@ def adjust_growth_for_omissions(daily, omissions, date_col):
     events; date_col the omission date to use ("detection_date" or
     "expected_date"). Omitted dollars only land on days the robust filter
     uses (see usable_days).
+
+    n_omitted counts omissions on their own trading day, before carry-forward;
+    dollars_omitted is after carry-forward. On a day the filter skips,
+    n_omitted can be positive while dollars_omitted is zero.
     """
     daily = daily.sort_values("date").reset_index(drop=True).copy()
     days = pd.DatetimeIndex(daily["date"])
