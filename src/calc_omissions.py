@@ -54,6 +54,16 @@ skips a single quarter therefore has that expectation met by its next
 quarterly declaration, and a firm that cuts from quarterly to semi-annual
 payments has every expectation met by one of the remaining declarations.
 Neither case produces an omission.
+
+An unmet expectation is also dropped when the firm is no longer a listed
+common stock on the detection date. That is right for mergers, but it also
+drops firms delisted for performance (CRSP codes 5xx) after missing a payment
+while still listed. On CRSP data there are 253 such expectations since 1973.
+Keeping them adds 93 suspending firms in total (4,757 to 4,850), at most 8 in
+any year (1990); 2008 goes from 155 to 160, 2009 from 176 to 179, and 2020 is
+unchanged. The dollar omission share stays 0.9999 correlated with this
+version. Mergers stay excluded: the largest 2008-09 cases are healthy targets
+that skipped a last dividend before the deal closed.
 """
 
 from pathlib import Path

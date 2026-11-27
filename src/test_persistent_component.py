@@ -86,7 +86,6 @@ def test_filtered_state_does_not_use_the_future():
     assert np.array_equal(first, second)
 
 
-
 def test_persistent_component_pipeline(monkeypatch):
     """Check observation screening and frozen-parameter filtering."""
     dates = pd.bdate_range("2016-09-01", "2017-02-28")
@@ -125,11 +124,7 @@ def test_persistent_component_pipeline(monkeypatch):
     def fake_fit(y, nu=None):
         fitted_samples.append(y.copy())
 
-        theta = (
-            paper_theta
-            if len(fitted_samples) == 1
-            else update_theta
-        )
+        theta = paper_theta if len(fitted_samples) == 1 else update_theta
 
         return {
             **dict(zip(cpc.PARAM_NAMES, theta)),
@@ -140,42 +135,42 @@ def test_persistent_component_pipeline(monkeypatch):
 
     monkeypatch.setattr(cpc, "fit_state_space", fake_fit)
 
-    states, params = cpc.estimate_persistent_component(
-        daily, models=("robust",)
-    )
+    states, params = cpc.estimate_persistent_component(daily, models=("robust",))
 
-    in_paper = (
-        daily["date"] <= cpc.PAPER_END_DATE
-    ).to_numpy()
+    in_paper = (daily["date"] <= cpc.PAPER_END_DATE).to_numpy()
 
     # Verify that the two fits receive the correct samples.
     assert len(fitted_samples) == 2
 
-    np.testing.assert_allclose(
-        fitted_samples[0], y[in_paper], equal_nan=True
-    )
+    np.testing.assert_allclose(fitted_samples[0], y[in_paper], equal_nan=True)
 
-    np.testing.assert_allclose(
-        fitted_samples[1], y, equal_nan=True
-    )
+    np.testing.assert_allclose(fitted_samples[1], y, equal_nan=True)
 
     paper = states.loc[states["sample"] == "paper"]
 
     # Smoothing must stop at the paper sample end.
-    assert paper.loc[
-        paper["date"] > cpc.PAPER_END_DATE,
-        "mu_smoothed",
-    ].isna().all()
+    assert (
+        paper.loc[
+            paper["date"] > cpc.PAPER_END_DATE,
+            "mu_smoothed",
+        ]
+        .isna()
+        .all()
+    )
 
-    assert paper.loc[
-        paper["date"] <= cpc.PAPER_END_DATE,
-        "mu_smoothed",
-    ].notna().all()
+    assert (
+        paper.loc[
+            paper["date"] <= cpc.PAPER_END_DATE,
+            "mu_smoothed",
+        ]
+        .notna()
+        .all()
+    )
 
     # Filtering must continue with frozen paper-sample parameters.
-    expected_paper = cpc.kalman_filter(
-        y, *paper_theta, nu=cpc.STUDENT_T_DOF
-    )["filt_mean"]
+    expected_paper = cpc.kalman_filter(y, *paper_theta, nu=cpc.STUDENT_T_DOF)[
+        "filt_mean"
+    ]
 
     np.testing.assert_allclose(
         paper["mu_filtered"].to_numpy(),
@@ -185,9 +180,9 @@ def test_persistent_component_pipeline(monkeypatch):
     # The update filter must use its own parameter estimates.
     update = states.loc[states["sample"] == "update"]
 
-    expected_update = cpc.kalman_filter(
-        y, *update_theta, nu=cpc.STUDENT_T_DOF
-    )["filt_mean"]
+    expected_update = cpc.kalman_filter(y, *update_theta, nu=cpc.STUDENT_T_DOF)[
+        "filt_mean"
+    ]
 
     np.testing.assert_allclose(
         update["mu_filtered"].to_numpy(),

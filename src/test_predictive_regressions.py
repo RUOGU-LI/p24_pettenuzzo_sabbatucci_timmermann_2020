@@ -90,3 +90,24 @@ def test_hac_ols_recovers_a_known_slope():
     result = cpr.hac_ols(pd.Series(y), x.to_frame())
     assert result.params["mu"] == pytest.approx(2.0, abs=0.05)
     assert result.nobs == 400
+
+
+def test_macro_regression_uses_next_quarter_growth(quarters):
+    """Growth changes every quarter, so a missing or doubled shift fails."""
+    growth = 0.01 * np.arange(1, len(quarters) + 1)
+    level = np.exp(np.cumsum(growth))
+    macro = pd.DataFrame(
+        {"date": quarters, **{col: level for col in cpr.MACRO_SERIES.values()}}
+    )
+    start = quarters[1] - pd.offsets.QuarterBegin(1)
+    days = pd.bdate_range(start, quarters[-1])
+    mu = pd.Series(np.linspace(0.0, 1.0, len(days)), index=days)
+    y, X = cpr.macro_regression_data(mu, macro, "gdp", start, quarters[-1], True)
+
+    # growth at quarters[k] is log(level[k] / level[k-1]) = growth[k]
+    assert X.index[0] == quarters[1]
+    assert X.loc[quarters[1], "growth_lag1"] == pytest.approx(growth[1])
+    assert y.loc[quarters[1]] == pytest.approx(growth[2])
+    assert y.loc[quarters[5]] == pytest.approx(growth[6])
+    assert np.isnan(y.loc[quarters[-1]])
+    assert X.loc[quarters[5], "mu"] == mu[mu.index <= quarters[5]].iloc[-1]
